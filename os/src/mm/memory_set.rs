@@ -1,7 +1,7 @@
 //! Implementation of [`MapArea`] and [`MemorySet`].
 
 use super::{frame_alloc, FrameTracker};
-use super::{PTEFlags, PageTable, PageTableEntry};
+use super::{page_table::PTEFlags, PageTable, PageTableEntry};
 use super::{PhysAddr, PhysPageNum, VirtAddr, VirtPageNum};
 use super::{StepByOne, VPNRange};
 use crate::config::{
@@ -37,6 +37,7 @@ lazy_static! {
 pub struct MemorySet {
     page_table: PageTable,
     areas: Vec<MapArea>,
+    mapped: BTreeMap<VirtPageNum, FrameTracker>,
 }
 
 impl MemorySet {
@@ -45,6 +46,7 @@ impl MemorySet {
         Self {
             page_table: PageTable::new(),
             areas: Vec::new(),
+            mapped: BTreeMap::new(),
         }
     }
     /// Get the page table token
@@ -261,6 +263,69 @@ impl MemorySet {
         } else {
             false
         }
+    }
+
+    /// mmap in memoryset
+    pub fn mmap(&mut self, start: usize, len: usize, port: usize) -> isize {
+        let start_va = VirtAddr::from(start);
+        if !start_va.aligned() {
+            return -1;
+        }
+
+        let mut flag = PTEFlags::from_bits_truncate(port as u8);
+        if port & 0x01 != 0 {
+            flag |= PTEFlags::R
+        }
+        if port & 0x02 != 0 {
+            flag |= PTEFlags::W
+        }
+        if port & 0x04 != 0 {
+            flag |= PTEFlags::X
+        }
+        flag |= PTEFlags::U;
+        flag |= PTEFlags::V;
+
+        let mut start_vp = VirtPageNum::from(start_va);
+        let end_vp = VirtAddr::ceil(&VirtAddr::from(start+len));
+
+        while start_vp != end_vp {
+            if let Some(pte) = self.page_table.translate(start_vp) {
+                if pte.is_valid() {
+                    return -1;
+                }
+            }
+            if let Some(ppn) = frame_alloc() {
+                self.page_table.map(start_vp, ppn.ppn, flag);
+                self.mapped.insert(start_vp, ppn);
+            } else {
+                return -1;
+            }
+            start_vp.step();
+        }
+        0
+    }
+    /// unmmap in memoryset
+    pub fn unmmap(&mut self, start: usize, len: usize) -> isize {
+        let start_va = VirtAddr::from(start);
+        if !start_va.aligned() {
+            return -1;
+        }
+        let mut start_vp = VirtPageNum::from(start_va);
+        let end_vp = VirtAddr::ceil(&VirtAddr::from(start+len));
+
+        while start_vp != end_vp {
+            if let Some(pte) = self.page_table.translate(start_vp) {
+                if !pte.is_valid() {
+                    return -1;
+                }
+            } else {
+                return -1;
+            }
+            self.page_table.unmap(start_vp);
+            self.mapped.remove(&start_vp);
+            start_vp.step();
+        }
+        0
     }
 }
 /// map area structure, controls a contiguous piece of virtual memory
