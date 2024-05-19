@@ -21,7 +21,7 @@ mod switch;
 #[allow(clippy::module_inception)]
 mod task;
 
-use crate::loader::get_app_data_by_name;
+use crate::{loader::get_app_data_by_name, mm::translated_str};
 use alloc::sync::Arc;
 use lazy_static::*;
 pub use manager::{fetch_task, TaskManager};
@@ -111,7 +111,49 @@ lazy_static! {
     ));
 }
 
-///Add init process to the manager
+/// Add init process to the manager
 pub fn add_initproc() {
     add_task(INITPROC.clone());
+}
+
+/// Add syscall times of current task
+pub fn add_syscall_for_current(syscall_id: usize) {
+    current_task().unwrap().inner_exclusive_access().add_syscall_for_current(syscall_id);
+}
+
+/// mmap for current task
+pub fn current_task_mmap(start: usize, len: usize, port: usize) -> isize {
+    current_task().unwrap().inner_exclusive_access().mmap(start, len, port)
+}
+
+/// munmap for current task
+pub fn current_task_munmap(start: usize, len: usize) -> isize {
+    current_task().unwrap().inner_exclusive_access().munmap(start, len)
+}
+
+/// set priority for current task
+pub fn set_priority_for_current(priority: isize) {
+    current_task().unwrap().inner_exclusive_access().priority_level = priority as usize;
+}
+
+/// current task, make spawn
+pub fn task_spawn(path: *const u8) -> isize {
+    if let Some(current_task) = current_task() {
+        let mut current_inner = current_task.inner_exclusive_access();
+        let token = current_inner.memory_set.token();
+
+        let path = translated_str(token, path);
+        if let Some(data) = get_app_data_by_name(path.as_str()) {
+            let child_block = Arc::new(TaskControlBlock::new(data));
+            let mut child_inner = child_block.inner_exclusive_access();
+            child_inner.parent = Some(Arc::downgrade(&current_task));
+            current_inner.children.push(child_block.clone());
+            add_task(child_block.clone());
+            return child_block.pid.0 as isize;
+        } else {
+            return -1;
+        }
+    } else {
+        return -1;
+    }
 }
