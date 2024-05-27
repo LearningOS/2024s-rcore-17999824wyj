@@ -6,7 +6,7 @@ use core::fmt::{Debug, Formatter, Result};
 /// Magic number for sanity check
 const EFS_MAGIC: u32 = 0x3b800001;
 /// The max number of direct inodes
-const INODE_DIRECT_COUNT: usize = 28;
+const INODE_DIRECT_COUNT: usize = 27;
 /// The max length of inode name
 const NAME_LENGTH_LIMIT: usize = 27;
 /// The max number of indirect1 inodes
@@ -86,6 +86,7 @@ pub struct DiskInode {
     pub indirect1: u32,
     pub indirect2: u32,
     type_: DiskInodeType,
+    pub ref_cnt: usize, // add this cnt to record how many ref is used, but need to add the 'INODE_DIRECT_COUNT'
 }
 
 impl DiskInode {
@@ -97,6 +98,20 @@ impl DiskInode {
         self.indirect1 = 0;
         self.indirect2 = 0;
         self.type_ = type_;
+        self.ref_cnt = 1;
+    }
+    /// the api to oper ref_cnt:
+    /// add_ref
+    pub fn add_ref(&mut self) {
+        self.ref_cnt += 1;
+    }
+    /// minus_ref
+    pub fn minus_ref(&mut self) {
+        self.ref_cnt -= 1;
+    }
+    /// if ref_cnt == 0, then can remove the file
+    pub fn can_remove(&self) -> bool {
+        self.ref_cnt == 0
     }
     /// Whether this inode is a directory
     pub fn is_dir(&self) -> bool {
