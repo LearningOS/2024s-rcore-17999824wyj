@@ -120,3 +120,23 @@ lazy_static! {
 pub fn add_initproc() {
     add_task(INITPROC.clone());
 }
+
+/// Add syscall times of current task
+pub fn add_syscall_for_current(syscall_id: usize) {
+    current_task().unwrap().inner_exclusive_access().add_syscall_for_current(syscall_id);
+}
+
+/// mmap for current task
+pub fn current_task_mmap(start: usize, len: usize, port: usize) -> isize {
+    current_task().unwrap().inner_exclusive_access().mmap(start, len, port)
+}
+
+/// munmap for current task
+pub fn current_task_munmap(start: usize, len: usize) -> isize {
+    current_task().unwrap().inner_exclusive_access().munmap(start, len)
+}
+
+/// set priority for current task
+pub fn set_priority_for_current(priority: isize) {
+    current_task().unwrap().inner_exclusive_access().priority_level = priority as usize;
+}

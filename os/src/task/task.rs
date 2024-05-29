@@ -1,10 +1,11 @@
 //! Types related to task management & Functions for completely changing TCB
 use super::TaskContext;
 use super::{kstack_alloc, pid_alloc, KernelStack, PidHandle};
-use crate::config::TRAP_CONTEXT_BASE;
+use crate::config::{MAX_SYSCALL_NUM, TRAP_CONTEXT_BASE};
 use crate::fs::{File, Stdin, Stdout};
 use crate::mm::{MemorySet, PhysPageNum, VirtAddr, KERNEL_SPACE};
 use crate::sync::UPSafeCell;
+use crate::timer::get_time_ms;
 use crate::trap::{trap_handler, TrapContext};
 use alloc::sync::{Arc, Weak};
 use alloc::vec;
@@ -71,6 +72,18 @@ pub struct TaskControlBlockInner {
 
     /// Program break
     pub program_brk: usize,
+
+    /// Task Call Num
+    pub task_call: [u32; MAX_SYSCALL_NUM],
+
+    /// Task Start Time
+    pub task_start_time: usize,
+
+    /// current stride
+    pub current_stride: usize,
+
+    /// priority level
+    pub priority_level: usize,
 }
 
 impl TaskControlBlockInner {
@@ -93,6 +106,21 @@ impl TaskControlBlockInner {
             self.fd_table.push(None);
             self.fd_table.len() - 1
         }
+    }
+    pub fn get_sys_call_times(&self) -> [u32; MAX_SYSCALL_NUM] {
+        self.task_call.clone()
+    }
+    pub fn get_task_run_times(&self) -> usize {
+        get_time_ms() - self.task_start_time
+    }
+    pub fn mmap(&mut self, start: usize, len: usize, port: usize) -> isize {
+        self.memory_set.mmap(start, len, port)
+    }
+    pub fn munmap(&mut self, start: usize, len: usize) -> isize {
+        self.memory_set.unmmap(start, len)
+    }
+    pub fn add_syscall_for_current(&mut self, syscall_id: usize) {
+        self.task_call[syscall_id] += 1;
     }
 }
 
@@ -135,6 +163,10 @@ impl TaskControlBlock {
                     ],
                     heap_bottom: user_sp,
                     program_brk: user_sp,
+                    task_call: [0; MAX_SYSCALL_NUM],
+                    task_start_time: 0,
+                    current_stride: 0,
+                    priority_level: 16,
                 })
             },
         };
@@ -216,6 +248,10 @@ impl TaskControlBlock {
                     fd_table: new_fd_table,
                     heap_bottom: parent_inner.heap_bottom,
                     program_brk: parent_inner.program_brk,
+                    task_call: [0; MAX_SYSCALL_NUM],
+                    task_start_time: get_time_ms(),
+                    current_stride: 0,
+                    priority_level: 16,
                 })
             },
         });
