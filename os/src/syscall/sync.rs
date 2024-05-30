@@ -191,17 +191,26 @@ pub fn sys_semaphore_down(sem_id: usize) -> isize {
         let mut allocation = vec![vec![0; sem_count]; thread_count];   // matrix `allocation`
         let mut need = vec![vec![0; sem_count]; thread_count];         // matrix `need`
         for (index, task) in process_inner.tasks.iter().enumerate() {
-            let task_inner = task.as_ref().unwrap().inner_exclusive_access();
-            let tid = task_inner.res.as_ref().unwrap().tid;
-            for (id,cnt) in task_inner.allocation.iter() {
-                allocation[index][*id] = *cnt;
-            }
-            for (id,cnt) in task_inner.need.iter() {
-                need[index][*id] = *cnt;
-            }
-            if tid == cur_tid {
-                // if tid stands for current task, it need to add one, for the 'banker' to judge whether still safe
-                need[index][sem_id] += 1;
+            if let Some(task_ref) = task {
+                let task_inner = task_ref.inner_exclusive_access();
+                let may_tid = task_inner.res.as_ref();
+                match may_tid {
+                    None => {return -1;},
+                    Some(tid) => {
+                        for (id, cnt) in task_inner.allocation.iter() {
+                            allocation[index][*id] = *cnt;
+                        }
+                        for (id, cnt) in task_inner.need.iter() {
+                            need[index][*id] = *cnt;
+                        }
+                        if tid.tid == cur_tid {
+                            // if tid stands for current task, it need to add one, for the 'banker' to judge whether still safe
+                            need[index][sem_id] += 1;
+                        }
+                    }
+                }
+            } else {
+                return -1;
             }
         }
         for (index,sem) in process_inner.semaphore_list.iter().enumerate() {
