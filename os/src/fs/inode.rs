@@ -170,10 +170,12 @@ impl File for OSInode {
 
 /// give the api to link new_name at old_name
 pub fn link_at(old_name: &str, new_name: &str) -> isize {
+    debug!("task link-at call >> old-name is {}, new-name is {}", old_name, new_name);
     ROOT_INODE.link_at(old_name, new_name)
 }
 
 /// give the api to unlink a file
 pub fn unlink_at(name: &str) -> isize {
+    debug!("task unlink-at call from >> {}", name);
     ROOT_INODE.unlink_at(name)
 }

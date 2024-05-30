@@ -115,5 +115,6 @@ pub fn sys_unlinkat(name: *const u8) -> isize {
         "kernel:pid[{}] sys_unlinkat",
         current_task().unwrap().pid.0
     );
-    unlink_at(&translated_str(current_user_token(), name))
+    let dir_name = translated_str(current_user_token(), name);
+    unlink_at(&dir_name)
 }

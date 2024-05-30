@@ -60,31 +60,36 @@ impl Inode {
     }
     /// Find inode under a disk inode by name
     fn find_inode_and_pop(&self, name: &str, disk_inode: &mut DiskInode) -> Option<u32> {
-        // assert it is a directory
+        // 确保disk_inode是一个目录
         assert!(disk_inode.is_dir());
+    
         let file_count = (disk_inode.size as usize) / DIRENT_SZ;
         let mut dirent = DirEntry::empty();
+    
         for i in 0..file_count {
+            // 读取目录项
             assert_eq!(
                 disk_inode.read_at(DIRENT_SZ * i, dirent.as_bytes_mut(), &self.block_device),
                 DIRENT_SZ,
             );
+
             if dirent.name() == name {
-                let r = Some(dirent.inode_id());
+                let inode_id = dirent.inode_id();
+    
                 if i == file_count - 1 {
-                    disk_inode.size -= 1;
+                    // 如果是最后一个目录项，则直接减小目录大小
+                    disk_inode.size -= DIRENT_SZ as u32;
                 } else {
-                    disk_inode.read_at(
-                        DIRENT_SZ * (file_count - 1),
-                        dirent.as_bytes_mut(),
-                        &self.block_device,
-                    );
+                    // 将最后一个目录项移到当前位置，并更新目录大小
+                    disk_inode.read_at(DIRENT_SZ * (file_count - 1), dirent.as_bytes_mut(), &self.block_device);
                     disk_inode.write_at(DIRENT_SZ * i, dirent.as_bytes_mut(), &self.block_device);
-                    disk_inode.size -= 1;
+                    disk_inode.size -= DIRENT_SZ as u32;
                 }
-                return r;
+    
+                return Some(inode_id);
             }
         }
+    
         None
     }
     /// Find inode under current inode by name
