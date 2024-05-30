@@ -22,7 +22,7 @@ mod switch;
 #[allow(rustdoc::private_intra_doc_links)]
 mod task;
 
-use crate::fs::{open_file, OpenFlags};
+use crate::{fs::{open_file, OpenFlags}, mm::translated_str};
 use alloc::sync::Arc;
 pub use context::TaskContext;
 use lazy_static::*;
@@ -134,6 +134,32 @@ pub fn current_task_mmap(start: usize, len: usize, port: usize) -> isize {
 /// munmap for current task
 pub fn current_task_munmap(start: usize, len: usize) -> isize {
     current_task().unwrap().inner_exclusive_access().munmap(start, len)
+}
+
+/// let current task to spawn
+pub fn current_task_spawn(path: *const u8) -> isize {
+    let current_task = current_task();
+    if current_task.is_none() {
+        return -1;
+    }
+
+    let current_task = current_task.unwrap();
+
+    let mut current_inner = current_task.inner_exclusive_access();
+
+    let token = current_inner.memory_set.token();
+    let path = translated_str(token, path);
+    if let Some(app_inode) = open_file(path.as_str(), OpenFlags::RDONLY) {
+        let all_data = app_inode.read_all();
+        let data = all_data.as_slice();
+        let child_block = Arc::new(TaskControlBlock::new(data));
+        let mut child_inner = child_block.inner_exclusive_access();
+        child_inner.parent = Some(Arc::downgrade(&current_task));
+        current_inner.children.push(child_block.clone());
+        add_task(child_block.clone());
+        return child_block.pid.0 as isize;
+    }
+    -1
 }
 
 /// set priority for current task

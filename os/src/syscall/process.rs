@@ -9,7 +9,7 @@ use crate::{
     fs::{open_file, OpenFlags},
     mm::{translated_byte_buffer, translated_refmut, translated_str},
     task::{
-        add_task, current_task, current_task_mmap, current_task_munmap, current_user_token, exit_current_and_run_next, set_priority_for_current, suspend_current_and_run_next, TaskControlBlock, TaskStatus
+        add_task, current_task, current_task_mmap, current_task_munmap, current_task_spawn, current_user_token, exit_current_and_run_next, set_priority_for_current, suspend_current_and_run_next, TaskStatus
     },
     timer::get_time_us,
 };
@@ -207,31 +207,7 @@ pub fn sys_spawn(path: *const u8) -> isize {
         "kernel:pid[{}] sys_spawn",
         current_task().unwrap().pid.0
     );
-
-    if let Some(current_task) = current_task() {
-        let mut current_inner = current_task.inner_exclusive_access();
-        let token = current_inner.memory_set.token();
-
-        let path = translated_str(token, path);
-        if let Some(app_inode) = open_file(path.as_str(), OpenFlags::RDONLY) {
-            let all_data = app_inode.read_all();
-
-            debug!("current task spawn >> file-path is {}", path);
-            
-            let child_block = Arc::new(TaskControlBlock::new(&all_data.as_slice()));
-            let mut child_inner = child_block.inner_exclusive_access();
-            child_inner.parent = Some(Arc::downgrade(&current_task));
-            current_inner.children.push(child_block.clone());
-            add_task(child_block.clone());
-            return child_block.pid.0 as isize;
-        } else {
-            debug!("Failed to open file: {}", path);
-            return -1;
-        }
-    } else {
-        debug!("No current task");
-        return -1;
-    }
+    current_task_spawn(path)
 }
 
 // YOUR JOB: Set task priority.
