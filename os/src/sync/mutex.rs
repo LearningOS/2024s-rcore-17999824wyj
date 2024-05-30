@@ -1,7 +1,7 @@
 //! Mutex (spin-like and blocking(sleep))
 
 use super::UPSafeCell;
-use crate::task::TaskControlBlock;
+use crate::task::{current_process, TaskControlBlock};
 use crate::task::{block_current_and_run_next, suspend_current_and_run_next};
 use crate::task::{current_task, wakeup_task};
 use alloc::{collections::VecDeque, sync::Arc};
@@ -9,7 +9,7 @@ use alloc::{collections::VecDeque, sync::Arc};
 /// Mutex trait
 pub trait Mutex: Sync + Send {
     /// Lock the mutex
-    fn lock(&self);
+    fn lock(&self) -> bool;
     /// Unlock the mutex
     fn unlock(&self);
 }
@@ -30,7 +30,7 @@ impl MutexSpin {
 
 impl Mutex for MutexSpin {
     /// Lock the spinlock mutex
-    fn lock(&self) {
+    fn lock(&self) -> bool {
         trace!("kernel: MutexSpin::lock");
         loop {
             let mut locked = self.locked.exclusive_access();
@@ -40,7 +40,7 @@ impl Mutex for MutexSpin {
                 continue;
             } else {
                 *locked = true;
-                return;
+                return true;
             }
         }
     }
@@ -79,15 +79,27 @@ impl MutexBlocking {
 
 impl Mutex for MutexBlocking {
     /// lock the blocking mutex
-    fn lock(&self) {
+    fn lock(&self) -> bool {
         trace!("kernel: MutexBlocking::lock");
         let mut mutex_inner = self.inner.exclusive_access();
         if mutex_inner.locked {
-            mutex_inner.wait_queue.push_back(current_task().unwrap());
-            drop(mutex_inner);
-            block_current_and_run_next();
+            let process = current_process();
+            let inner = process.inner_exclusive_access();
+            if inner.need_dead_lock_detect {
+                // need detect, but current can't get any resource, so just return false
+                return false;
+            } else {
+                // don't need detect, just return true is ok
+                mutex_inner.wait_queue.push_back(current_task().unwrap());
+                drop(inner);
+                drop(process);
+                drop(mutex_inner);
+                block_current_and_run_next();
+                return true;
+            }
         } else {
             mutex_inner.locked = true;
+            return true;
         }
     }
 

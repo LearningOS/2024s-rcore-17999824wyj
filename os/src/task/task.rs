@@ -5,6 +5,7 @@ use super::{kstack_alloc, KernelStack, ProcessControlBlock, TaskContext};
 use crate::trap::TrapContext;
 use crate::{mm::PhysPageNum, sync::UPSafeCell};
 use alloc::sync::{Arc, Weak};
+use alloc::vec::Vec;
 use core::cell::RefMut;
 
 /// Task control block structure
@@ -41,6 +42,14 @@ pub struct TaskControlBlockInner {
     pub task_status: TaskStatus,
     /// It is set when active exit or execution error occurs
     pub exit_code: Option<i32>,
+
+    /// the vector of allocation, records how many semaphore has been got
+    /// if there is a vec to store task, we can see 'allocation matrix'
+    /// the first element is `semaphore's id`, the second is how many semaphore
+    /// because there would be sometimes lots of processes will want the same semaphore, so it may be lower than 0
+    pub allocation: Vec<(usize, isize)>,
+    /// the vector of need, records this 'task' need how many semaphore
+    pub need: Vec<(usize, isize)>,
 }
 
 impl TaskControlBlockInner {
@@ -75,6 +84,8 @@ impl TaskControlBlock {
                     task_cx: TaskContext::goto_trap_return(kstack_top),
                     task_status: TaskStatus::Ready,
                     exit_code: None,
+                    allocation: Vec::new(),
+                    need: Vec::new(),
                 })
             },
         }
